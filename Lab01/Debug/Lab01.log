@@ -1,0 +1,7 @@
+﻿cl : command line warning D9035: option 'Gm' has been deprecated and will be removed in a future release
+  lodepng.cpp
+C:\Users\User\Desktop\Repos\CS434\Lab3\Lab01\src\lodepng.cpp(730,35): warning C4267: '=': conversion from 'size_t' to 'unsigned short', possible loss of data
+C:\Users\User\Desktop\Repos\CS434\Lab3\Lab01\src\lodepng.cpp(754,37): warning C4267: '=': conversion from 'size_t' to 'unsigned short', possible loss of data
+C:\Users\User\Desktop\Repos\CS434\Lab3\Lab01\src\lodepng.cpp(771,38): warning C4267: '=': conversion from 'size_t' to 'unsigned short', possible loss of data
+lights.obj : warning LNK4075: ignoring '/EDITANDCONTINUE' due to '/SAFESEH' specification
+  Lab01.vcxproj -> C:\Users\User\Desktop\Repos\CS434\Lab3\Lab01\Debug\Lab01.exe
