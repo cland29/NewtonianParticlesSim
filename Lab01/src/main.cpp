@@ -44,6 +44,9 @@ bool needRedisplay=false;
 ShapesC* sphere;
 ShapesC* tri;
 std::vector<unsigned char> image;
+int terrProfileWidth, terrProfileLength;
+double terrWidth = 10.0, terrLength = 10.0, terrHeightScale = 1.0;
+
 
 //shader program ID
 GLuint shaderProgram;
@@ -69,16 +72,19 @@ public:
 
 LightC light;
 
-class Vector3D{
+
+class Triangle3D {
 	public:
-		double x, y, z;
-		class Vector3D(double x, double y, double z){
-			this->x = x; this->y = y; this->z = z;
-		}
-		Vector3D operator+(Vector3D addVec){
-			return Vector3D(x + addVec.x, y + addVec.y, z + addVec.z);
+		glm::vec3 edgeA, edgeB, edgeC;
+		glm::vec3 vertexA, vertexB, vertexC;
+		Triangle3D::Triangle3D(glm::vec3 vertexA, glm::vec3 vertexB, glm::vec3 vertexC) {
+			this->vertexA = vertexA;
+			this->vertexB = vertexB;
+			this->vertexC = vertexC;
 		}
 };
+
+
 
 //the main window size
 GLint wWindow=800;
@@ -86,9 +92,9 @@ GLint hWindow=800;
 
 float sh=1;
 
-Vector3D eye = Vector3D(10, 5, 10);
-Vector3D eyeVelF = Vector3D(0, 0, 0);
-Vector3D eyeVelS = Vector3D(0, 0, 0);
+glm::vec3 eye = glm::vec3(-10, 5, -10);
+glm::vec3 eyeVelF = glm::vec3(0, 0, 0);
+glm::vec3 eyeVelS = glm::vec3(0, 0, 0);
 
 /*********************************
 Some OpenGL-related functions
@@ -108,11 +114,14 @@ void decodeTwoSteps(const char* filename) {
   std::vector<unsigned char> png;
    //the raw pixels
   unsigned width, height;
-  std::vector<unsigned char> image1;
+  
 
   //load and decode
   unsigned error = lodepng::load_file(png, filename);
-  if(!error) error = lodepng::decode(image1, width, height, png);
+  if(!error) error = lodepng::decode(image, width, height, png);
+
+  terrProfileWidth = (int)width;
+  terrProfileLength = (int)height;
 
   //if there's an error, display it
   if(error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
@@ -120,6 +129,10 @@ void decodeTwoSteps(const char* filename) {
   //the pixels are now in the vector "image", 4 bytes per pixel, ordered RGBARGBA..., use it as texture, draw it, ...
 }
 
+
+double getNormTerrHeight(std::vector<unsigned char> terrImage, int x, int y) {
+	return ((double)pow(x,2) - (double) pow(y,2))/10;// ((double)terrImage[4 * terrProfileWidth * y + 4 * x]) / 255 * terrHeightScale;
+}
 
 void Arm(glm::mat4 m)
 {
@@ -183,7 +196,7 @@ void RenderObjects()
 	//			     glm::vec3(0,0,0),  //destination
 	//			     glm::vec3(0,1,0)); //up
 	view=glm::lookAt(glm::vec3(eye.x, eye.y, eye.z),//eye
-				     glm::vec3(eye.x - 10.0, eye.y - 5.0,eye.z - 10.0),  //destination
+				     glm::vec3(eye.x + 10.0, eye.y - 5.0,eye.z + 10.0),  //destination
 				     glm::vec3(0,1,0)); //up
 
 	glUniformMatrix4fv(params.viewParameter,1,GL_FALSE,glm::value_ptr(view));
@@ -197,9 +210,11 @@ void RenderObjects()
 		for (int j=-range;j<range;j++)
 		{
 			glm::mat4 m=glm::translate(glm::mat4(1.0),glm::vec3(4*i,0,4*j));
-			Arm2(m);
+			//Arm2(m);
 		}
 	}
+	glm::mat4 m = glm::translate(glm::mat4(1.0), glm::vec3(0, 0, 0));
+	Arm2(m);
 }
 	
 void Idle(void)
@@ -248,26 +263,26 @@ void SpecKbdPress(int a, int x, int y)
 	{
  	  case GLUT_KEY_LEFT  : 
 		  {
-			  eyeVelS.x = -0.1;
-			  eyeVelS.z = 0.1;
+			  eyeVelS.x = 0.1;
+			  eyeVelS.z = -0.1;
 			  break;
 		  }
 	  case GLUT_KEY_RIGHT : 
 		  {
-			eyeVelS.x = 0.1;
-			eyeVelS.z = -0.1;
+			eyeVelS.x = -0.1;
+			eyeVelS.z = 0.1;
 			break;
 		  }
  	  case GLUT_KEY_DOWN    : 
 		  {
-			eyeVelF.x = 0.1;
-			eyeVelF.z = 0.1;
+			eyeVelF.x = -0.1;
+			eyeVelF.z = -0.1;
 			break;
 		  }
 	  case GLUT_KEY_UP  :
 		  {
-			eyeVelF.x = -0.1;
-			eyeVelF.z = -0.1;
+			eyeVelF.x = 0.1;
+			eyeVelF.z = 0.1;
 			break;
 		  }
 
@@ -361,21 +376,59 @@ void InitShapes(ShaderParamsC *params)
 	sphere->SetKsToShader(params->ksParameter);
 	sphere->SetShToShader(params->shParameter);
 
-	/////const char* filename = "Untitled.png";
-	//decodeTwoSteps(filename);
+	string filename = "Untitled.png";
+	decodeTwoSteps(filename.c_str());
+	printf("Width%d Length %d\n", terrProfileLength, terrProfileWidth);
+	vector<vector<glm::vec3>> triList;
+	for (int z = 0; z < terrProfileLength - 1; z++) {
+		for (int x = 0; x < terrProfileWidth - 1; x++) {
+			printf("z:%d x:%d\n", z, x);
+			
+			double widScale = (double) terrWidth/ (double)terrProfileWidth;
+			double lenScale = (double) terrLength / (double)terrProfileLength;
+			
+			//Gathers the points from the pixels such that 
+			//the following vertex are labeled as such:
+			//  1----2/4
+			//  |   / |
+			//  |  /  |
+			//  | /   |
+			// 3/6----5
 
-	vector<vector<vector<double>>> triList;
-	for(int i = 0; i < 1; i++){
-		vector<vector<double>> triVertList;
-		for(int v = 0; v < 3; v++){
-			vector<double> vert;
-			vert.push_back(v);
-			vert.push_back(v%2);
-			vert.push_back(0);
-			triVertList.push_back(vert);
+			glm::vec3 vert1 = glm::vec3(x * widScale, getNormTerrHeight(image, x, z), z * lenScale);
+			glm::vec3 vert2 = glm::vec3((x + 1.0) * widScale, getNormTerrHeight(image, x+1.0, z), z * lenScale);
+			glm::vec3 vert3 = glm::vec3(x * widScale, getNormTerrHeight(image, x, z+1), (z+1.0) * lenScale);
+
+			vector<glm::vec3> triVertList1;
+			triVertList1.push_back(vert1); triVertList1.push_back(vert2); triVertList1.push_back(vert3);
+			
+			glm::vec3 vert4 = glm::vec3((x + 1.0) * widScale, getNormTerrHeight(image, x + 1, z), z * lenScale);
+			glm::vec3 vert5 = glm::vec3((x + 1.0) * widScale, getNormTerrHeight(image, x + 1, z + 1), (z + 1.0) * lenScale);
+			glm::vec3 vert6 = glm::vec3(x * widScale, getNormTerrHeight(image, x, z + 1), (z + 1.0) * lenScale);
+
+			vector<glm::vec3> triVertList2;
+			triVertList2.push_back(vert4); triVertList2.push_back(vert5); triVertList2.push_back(vert6);
+			
+			triList.push_back(triVertList1); triList.push_back(triVertList2);
+
 		}
-		triList.push_back(triVertList);
 	}
+	glm::vec3 vert1 = glm::vec3(0, 0, 0);
+	glm::vec3 vert2 = glm::vec3(1, 0, 0);
+	glm::vec3 vert3 = glm::vec3(0, 0, 1);
+
+	vector<glm::vec3> triVertList1;
+	triVertList1.push_back(vert1); triVertList1.push_back(vert2); triVertList1.push_back(vert3);
+	//triList.push_back(triVertList1);
+
+	glm::vec3 vert4 = glm::vec3(1, 0, 0);
+	glm::vec3 vert5 = glm::vec3(1, 0, 1);
+	glm::vec3 vert6 = glm::vec3(0, 0, 1);
+
+	vector<glm::vec3> triVertList2;
+	triVertList2.push_back(vert4); triVertList2.push_back(vert5); triVertList2.push_back(vert6);
+	//triList.push_back(triVertList2);
+	
 	tri=new TriC(triList);
 	tri->SetKa(glm::vec3(0.1,0.1,0.1));
 	tri->SetKs(glm::vec3(0,0,1));

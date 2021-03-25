@@ -224,9 +224,13 @@ void CubeC::Render()
 	glEnableVertexAttribArray(0);
     glUniformMatrix4fv(modelParameter,1,GL_FALSE,glm::value_ptr(model));
 	glDrawArrays(GL_TRIANGLES, 0, 3*points);
+	//model for normals
+	glUniformMatrix3fv(modelViewNParameter, 1, GL_FALSE, glm::value_ptr(modelViewN));
+	glDrawArrays(GL_TRIANGLES, 0, 3 * points);
 }
 
 //Creating a triangle
+/*
 void TriC::InitArrays()
 {
 	glGenVertexArrays(1,&vaID);
@@ -238,28 +242,37 @@ void TriC::InitArrays()
 	glVertexAttribPointer((GLuint)0, 3, GL_FLOAT, GL_FALSE, 0, 0); 
 	glEnableVertexAttribArray(0);
 	vertex.clear(); //no need for the vertex data, it is on the GPU now
+
+
+	normals = normal.size();
+	//the vertex array will have two vbos, vertices and normals
+	glGenBuffers(2, vboHandles);
+
+	GLuint verticesID = vboHandles[0];
+	GLuint normalsID = vboHandles[1];
+
+	//send normals
+	glBindBuffer(GL_ARRAY_BUFFER, normalsID);
+	glBufferData(GL_ARRAY_BUFFER, normals * sizeof(GLfloat), &normal[0], GL_STATIC_DRAW);
+	glVertexAttribPointer((GLuint)1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(1);
+	normal.clear(); //no need for the normal data, it is on the GPU now
 }
 
 
-TriC::TriC(vector<vector<vector<double>>> pointPos)
+TriC::TriC(vector<vector<glm::vec3>> pointPos)
 {
 	Generate(pointPos);	
 	InitArrays();
 }
 
-void TriC::Generate(vector<vector<vector<double>>> pointPos)
+void TriC::Generate(vector<vector<glm::vec3>> pointPos)
 {
-	
-	const glm::vec3 D=glm::vec3(-0.5f,+0.5f,-0.5f);
-	const glm::vec3 E=glm::vec3(-0.5f,-0.5f,+0.5f);
-	const glm::vec3 F=glm::vec3(+0.5f,-0.5f,+0.5f);
-	const glm::vec3 G=glm::vec3(+0.5f,+0.5f,+0.5f);
-	const glm::vec3 H=glm::vec3(-0.5f,+0.5f,+0.5f);
-	std::vector<vector<vector<double>>>::iterator it = pointPos.begin();
+	std::vector<vector<glm::vec3>>::iterator it = pointPos.begin();
 	for(it; it != pointPos.end(); it++){
-		const glm::vec3 A=glm::vec3((*it)[0][0], (*it)[0][1], (*it)[0][1]);
-		const glm::vec3 B=glm::vec3((*it)[1][0], (*it)[1][1], (*it)[1][2]);
-		const glm::vec3 C=glm::vec3((*it)[2][0], (*it)[2][1], (*it)[2][2]);
+		const glm::vec3 A = (*it)[0];
+		const glm::vec3 B = (*it)[1];
+		const glm::vec3 C = (*it)[2];
 		AddVertex(&vertex,&A);AddVertex(&vertex,&B);AddVertex(&vertex,&C);
 	}
 }
@@ -272,3 +285,79 @@ void TriC::Render()
     glUniformMatrix4fv(modelParameter,1,GL_FALSE,glm::value_ptr(model));
 	glDrawArrays(GL_TRIANGLES, 0, 3*points);
 }
+*/
+
+
+
+
+
+
+
+
+void TriC::Render()
+{
+	glBindVertexArray(vaID);
+	//	glBindBuffer(GL_ARRAY_BUFFER, buffer);
+	//	glEnableVertexAttribArray(0);
+		//material properties
+	glUniform3fv(kaParameter, 1, glm::value_ptr(ka));
+	glUniform3fv(kdParameter, 1, glm::value_ptr(kd));
+	glUniform3fv(ksParameter, 1, glm::value_ptr(ks));
+	glUniform1fv(shParameter, 1, &sh);
+	//model matrix
+	glUniformMatrix4fv(modelParameter, 1, GL_FALSE, glm::value_ptr(model));
+	//model for normals
+	glUniformMatrix3fv(modelViewNParameter, 1, GL_FALSE, glm::value_ptr(modelViewN));
+	glDrawArrays(GL_TRIANGLES, 0, 3 * points);
+}
+
+void TriC::Generate(std::vector<vector<glm::vec3>> pointPos)
+{
+	std::vector<vector<glm::vec3>>::iterator it = pointPos.begin();
+	for (it; it != pointPos.end(); it++) {
+		const glm::vec3 A = (*it)[0];
+		const glm::vec3 B = (*it)[1];
+		const glm::vec3 C = (*it)[2];
+		AddVertex(&vertex, &A); AddVertex(&vertex, &B); AddVertex(&vertex, &C);
+		const glm::vec3 norm = glm::cross((A - B), (A - C));
+		AddVertex(&normal, &norm); AddVertex(&normal, &norm); AddVertex(&normal, &norm); //and add the normal vector
+	}
+	printf("GeneratingTri!\n");
+}
+
+void TriC::InitArrays()
+{
+	points = vertex.size();
+	normals = normal.size();
+	printf("Stop point 1\n");
+	//get the vertex array handle and bind it
+	glGenVertexArrays(1, &vaID);
+	glBindVertexArray(vaID);
+	printf("Stop point 2\n");
+	//the vertex array will have two vbos, vertices and normals
+	glGenBuffers(2, vboHandles);
+	GLuint verticesID = vboHandles[0];
+	GLuint normalsID = vboHandles[1];
+	printf("Stop point 3\n");
+	//send vertices
+	glBindBuffer(GL_ARRAY_BUFFER, verticesID);
+	glBufferData(GL_ARRAY_BUFFER, points * sizeof(GLfloat), &vertex[0], GL_STATIC_DRAW);
+	glVertexAttribPointer((GLuint)0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(0);
+	vertex.clear(); //no need for the vertex data, it is on the GPU now
+	printf("Stop point 4\n");
+//send normals
+	glBindBuffer(GL_ARRAY_BUFFER, normalsID);
+	glBufferData(GL_ARRAY_BUFFER, normals * sizeof(GLfloat), &normal[0], GL_STATIC_DRAW);
+	glVertexAttribPointer((GLuint)1, 3, GL_FLOAT, GL_FALSE, 0, 0);
+	glEnableVertexAttribArray(1);
+	normal.clear(); //no need for the normal data, it is on the GPU now
+	printf("Stop point 5\n");
+}
+
+TriC::TriC(std::vector<vector<glm::vec3>> pointPos)
+{
+	Generate(pointPos);
+	InitArrays();
+}
+

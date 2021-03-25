@@ -83,11 +83,11 @@ private:
 class TriC: public ShapesC
 {
 public:
-	TriC(vector<vector<vector<double>>>);
+	TriC(vector<vector<glm::vec3>>);
 	virtual void Render();		
 private:
   void InitArrays();
-  void Generate(vector<vector<vector<double>>>);
+  void Generate(vector<vector<glm::vec3>>);
 };
 
 //derived class from ShapesC
