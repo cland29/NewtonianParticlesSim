@@ -1,4 +1,4 @@
- /**********************************/
+	 /**********************************/
 /* Lighting					      
    (C) Bedrich Benes 2021         
    Diffuse and specular per fragment.
@@ -22,6 +22,7 @@
 #include <vector>			//Standard template library class
 #include <GL/glew.h>
 #include <GL/glut.h>
+#include <omp.h>
 
 
 
@@ -45,7 +46,13 @@ ShapesC* sphere;
 ShapesC* tri;
 std::vector<unsigned char> image;
 int terrProfileWidth, terrProfileLength;
-double terrWidth = 10.0, terrLength = 10.0, terrHeightScale = 1.0;
+double terrWidth = 10.0, terrLength = 10.0, terrHeightScale = 4.0;
+double terrWidStep = 0.0, terrLenStep = 0.0;
+
+vector<glm::vec3> spherePosVec;
+vector<glm::vec3> sphereVelVec;
+vector<glm::vec3> sphereAccVec;
+vector<vector<glm::vec3>> triList;
 
 
 //shader program ID
@@ -82,8 +89,47 @@ class Triangle3D {
 			this->vertexB = vertexB;
 			this->vertexC = vertexC;
 		}
+		
 };
 
+
+bool getRayIntersection(vector<glm::vec3> tri, glm::vec3 rayOrigin, glm::vec3 rayVector, glm::vec3& outIntersectionVector) {
+	//Borrowed from my project 2!
+	//Taken from the Wikipedia article discussion Triangle intersection:
+	//URL: 
+	glm::vec3 vertexA = tri[0];
+	glm::vec3 edgeA = tri[2] - tri[1];
+	glm::vec3 edgeB = tri[0] - tri[2];
+	glm::vec3 edgeC = tri[1] - tri[0];
+	rayVector = glm::normalize(rayVector);
+	const float EPSILON = 0.0000001;
+	glm::vec3 edge1, edge2, h, s, q;
+	float a, f, u, v, t;
+	edge1 = edgeC;
+	edge2 = glm::vec3(-edgeB[0], -edgeB[1], -edgeB[2]);
+	h = glm::cross(rayVector, edge2);
+	a = glm::dot(edge1, h);
+	if (a > -EPSILON && a < EPSILON)
+		return false;    // This ray is parallel to this triangle.
+	f = 1.0 / a;
+	s = rayOrigin - vertexA;
+	u = f * glm::dot(s, h);
+	if (u < 0.0 || u > 1.0)
+		return false;
+	q = glm::cross(s, edge1);
+	v = f * glm::dot(rayVector, q);
+	if (v < 0.0 || u + v > 1.0)
+		return false;
+	// At this stage we can compute t to find out where the intersection point is on the line.
+	t = f * glm::dot(edge2, q);
+	if (t > EPSILON) // ray intersection
+	{
+		outIntersectionVector = rayOrigin + t * rayVector;
+		return true;
+	}
+	else // This means that there is a line intersection but not a ray intersection.
+		return false;
+}
 
 
 //the main window size
@@ -92,7 +138,7 @@ GLint hWindow=800;
 
 float sh=1;
 
-glm::vec3 eye = glm::vec3(-10, 5, -10);
+glm::vec3 eye = glm::vec3(-10, 3, -10);
 glm::vec3 eyeVelF = glm::vec3(0, 0, 0);
 glm::vec3 eyeVelS = glm::vec3(0, 0, 0);
 
@@ -131,14 +177,15 @@ void decodeTwoSteps(const char* filename) {
 
 
 double getNormTerrHeight(std::vector<unsigned char> terrImage, int x, int y) {
-	return ((double)pow(x,2) - (double) pow(y,2))/10;// ((double)terrImage[4 * terrProfileWidth * y + 4 * x]) / 255 * terrHeightScale;
+	return -((double)terrImage[4 * terrProfileWidth * y + 4 * x]) / 255 * terrHeightScale;
+		//((double)pow(x, 2) - (double)pow(y, 2)) / 10;
 }
 
 void Arm(glm::mat4 m)
 {
 //let's use instancing
 	m=glm::translate(m,glm::vec3(0,0.5,0.0));
-	m=glm::scale(m,glm::vec3(1.0f,1.0f,1.0f));
+	m=glm::scale(m,glm::vec3(0.1f,0.1f,0.1f));
 	sphere->SetModel(m);
 	//now the normals
 	glm::mat3 modelViewN=glm::mat3(view*m);
@@ -157,6 +204,29 @@ void Arm(glm::mat4 m)
 	sphere->Render();
 }
 
+void ball(glm::mat4 m)
+{
+	//let's use instancing
+	m = glm::translate(m, glm::vec3(0, 0.5, 0.0));
+	m = glm::scale(m, glm::vec3(0.1f, 0.1f, 0.1f));
+	sphere->SetModel(m);
+	//now the normals
+	glm::mat3 modelViewN = glm::mat3(view * m);
+	modelViewN = glm::transpose(glm::inverse(modelViewN));
+	sphere->SetModelViewN(modelViewN);
+	sphere->Render();
+	/*
+	m = glm::translate(m, glm::vec3(0.0, 0.5, 0.0));
+	m = glm::rotate(m, -20.0f * ftime, glm::vec3(0.0, 0.0, 1.0));
+	m = glm::translate(m, glm::vec3(0.0, 1.5, 0.0));
+	sphere->SetModel(glm::scale(m, glm::vec3(0.5f, 1.0f, 0.5f)));
+
+	modelViewN = glm::mat3(view * m);
+	modelViewN = glm::transpose(glm::inverse(modelViewN));
+	sphere->SetModelViewN(modelViewN);
+	sphere->Render();*/
+}
+
 
 void Arm2(glm::mat4 m)
 {
@@ -170,51 +240,127 @@ void Arm2(glm::mat4 m)
 	tri->SetModelViewN(modelViewN);
 	tri->Render();
 
-	m=glm::translate(m,glm::vec3(0.0,0.5,0.0));
-	m=glm::rotate(m,-20.0f*ftime,glm::vec3(0.0,0.0,1.0));
-	m=glm::translate(m,glm::vec3(0.0,1.5,0.0));
-	sphere->SetModel(glm::scale(m,glm::vec3(0.5f,1.0f,0.5f)));
-
-	modelViewN=glm::mat3(view*m);
-	modelViewN= glm::transpose(glm::inverse(modelViewN));
-	sphere->SetModelViewN(modelViewN);
-	sphere->Render();
+	
 }
 
 //the main rendering function
 void RenderObjects()
 {
 	eye = eye + eyeVelF + eyeVelS;
-	const int range=3;
-	glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
-	glColor3f(0,0,0);
+	const int range = 3;
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+	glColor3f(0, 0, 0);
 	glPointSize(2);
 	glLineWidth(1);
 	//set the projection and view once for the scene
-	glUniformMatrix4fv(params.projParameter,1,GL_FALSE,glm::value_ptr(proj));
+	glUniformMatrix4fv(params.projParameter, 1, GL_FALSE, glm::value_ptr(proj));
 	//view=glm::lookAt(glm::vec3(25*sin(ftime/40.f),5.f,15*cos(ftime/40.f)),//eye
 	//			     glm::vec3(0,0,0),  //destination
 	//			     glm::vec3(0,1,0)); //up
-	view=glm::lookAt(glm::vec3(eye.x, eye.y, eye.z),//eye
-				     glm::vec3(eye.x + 10.0, eye.y - 5.0,eye.z + 10.0),  //destination
-				     glm::vec3(0,1,0)); //up
+	view = glm::lookAt(glm::vec3(eye.x, eye.y, eye.z),//eye
+					 //glm::vec3(terrLength/2, 0, terrWidth/2),
+		glm::vec3(eye.x + 10.0, eye.y - 5.0, eye.z + 10.0),  //destination
+		glm::vec3(0, 1, 0)); //up
 
-	glUniformMatrix4fv(params.viewParameter,1,GL_FALSE,glm::value_ptr(view));
-//set the light
+	glUniformMatrix4fv(params.viewParameter, 1, GL_FALSE, glm::value_ptr(view));
+	//set the light
 	static glm::vec4 pos;
-	pos.x=20*sin(ftime/12);pos.y=-10;pos.z=20*cos(ftime/12);pos.w=1;
+	pos.x = 20 * sin(ftime / 12); pos.y = -10; pos.z = 20 * cos(ftime / 12); pos.w = 1;
+	pos.x = 20; pos.y = -10; pos.z = -20; pos.w = 1;
 	light.SetPos(pos);
 	light.SetShaders();
-	for (int i=-range;i<range;i++)
+	for (int i = 0; i < spherePosVec.size(); i++) {
+		glm::mat4 m = glm::translate(glm::mat4(1.0), spherePosVec[i]);
+		ball(m);
+
+	}
+	/*
+	# pragma opm parallel for
+		for (int i = 0; i < spherePosVec.size(); i++) {
+			//Check if the proposed position hits a triangle. If so, bounce.
+
+			glm::vec3 propPos = spherePosVec[i] + sphereVelVec[i];
+			double minX = floor(min(spherePosVec[i][0], propPos[0]));
+			double maxX = ceil(max(spherePosVec[i][0], propPos[0]));
+			double minZ = floor(min(spherePosVec[i][2], propPos[2]));
+			double maxZ = ceil(max(spherePosVec[i][2], propPos[2]));
+			glm::vec3 bounceVec = glm::vec3(0, 0, 0);
+			bool bounce = false;
+
+			for (vector<glm::vec3> tri: triList) {
+				glm::vec3 outVec;
+				getRayIntersection(tri, spherePosVec[i], sphereVelVec[i], outVec);
+				if (glm::length(outVec - spherePosVec[i]) <= glm::length(sphereVelVec[i])) {
+					spherePosVec[i] = glm::vec3(0, 10, 0);
+
+					break;
+				}
+			}
+
+
+			if (!bounce) {
+				spherePosVec[i] = propPos;
+			}
+			sphereVelVec[i] = sphereVelVec[i] + sphereAccVec[i];
+
+		}*/
+#pragma omp parallel
 	{
-		for (int j=-range;j<range;j++)
-		{
-			glm::mat4 m=glm::translate(glm::mat4(1.0),glm::vec3(4*i,0,4*j));
-			//Arm2(m);
+	#pragma omp for
+	for (int i = 0; i < spherePosVec.size(); i++) {
+		//Check if the proposed position hits a triangle. If so, bounce.
+		//printf("%d: %d\n", omp_get_thread_num(), i);
+		glm::vec3 propPos = spherePosVec[i] + sphereVelVec[i];
+		double minX = floor(min(spherePosVec[i][0], propPos[0]));
+		double maxX = ceil(max(spherePosVec[i][0], propPos[0]));
+		double minZ = floor(min(spherePosVec[i][2], propPos[2]));
+		double maxZ = ceil(max(spherePosVec[i][2], propPos[2]));
+
+		double minXterr = floor(minX / terrWidStep);
+		double maxXterr = ceil(maxX / terrWidStep);
+		double minZterr = floor(minZ / terrWidStep);
+		double maxZterr = ceil(maxZ / terrWidStep);
+
+		glm::vec3 bounceVec = glm::vec3(0, 0, 0);
+		bool bounce = false;
+
+		if (i == 0) {
+			printf("Pos %f, %f, %f", spherePosVec[i][0], spherePosVec[i][1], spherePosVec[i][2]);
+			printf("Min/Max %f, %f, %f, %fZ %f, %f\n", minX, maxX, spherePosVec[i][0], propPos[0], minZ, maxZ);
 		}
+		
+		for (int x = minXterr; x <= maxXterr; x++) {
+			for (int z = minZterr; z <= maxZterr; z++) {
+				glm::vec3 outVec;
+				if (i == 0) {
+					printf("debug test for triangle intersection %f, %f\n", x * terrWidStep, z * terrLenStep);
+				}
+				getRayIntersection(triList[z * terrProfileWidth + x], spherePosVec[i], sphereVelVec[i], outVec);
+				if (glm::length(outVec - spherePosVec[i]) <= glm::length(sphereVelVec[i])) {
+					printf("bounce!");
+					spherePosVec[i] = glm::vec3(0, 10, 0);
+					bounce = true;
+					break;
+				}
+			}
+		}
+		if (spherePosVec[i][1] < 0) {
+			sphereVelVec[i] = -1.0f * sphereVelVec[i];
+			spherePosVec[i] = spherePosVec[i] + sphereVelVec[i];
+			bounce = true;
+
+		}
+
+		if (!bounce) {
+			spherePosVec[i] = propPos;
+		}
+		sphereVelVec[i] = sphereVelVec[i] + sphereAccVec[i];
+
+	}
 	}
 	glm::mat4 m = glm::translate(glm::mat4(1.0), glm::vec3(0, 0, 0));
 	Arm2(m);
+	
 }
 	
 void Idle(void)
@@ -376,24 +522,28 @@ void InitShapes(ShaderParamsC *params)
 	sphere->SetKsToShader(params->ksParameter);
 	sphere->SetShToShader(params->shParameter);
 
-	string filename = "Untitled.png";
+	string filename = "benes.png";
+	filename = "test2.png";
 	decodeTwoSteps(filename.c_str());
 	printf("Width%d Length %d\n", terrProfileLength, terrProfileWidth);
-	vector<vector<glm::vec3>> triList;
+	
 	for (int z = 0; z < terrProfileLength - 1; z++) {
+		printf("z:%d\n", z);
 		for (int x = 0; x < terrProfileWidth - 1; x++) {
-			printf("z:%d x:%d\n", z, x);
+			
 			
 			double widScale = (double) terrWidth/ (double)terrProfileWidth;
 			double lenScale = (double) terrLength / (double)terrProfileLength;
+			terrWidStep = widScale;
+			terrLenStep = lenScale;
 			
 			//Gathers the points from the pixels such that 
 			//the following vertex are labeled as such:
-			//  1----2/4
+			//  1----2/6
 			//  |   / |
 			//  |  /  |
 			//  | /   |
-			// 3/6----5
+			// 3/5----4
 
 			glm::vec3 vert1 = glm::vec3(x * widScale, getNormTerrHeight(image, x, z), z * lenScale);
 			glm::vec3 vert2 = glm::vec3((x + 1.0) * widScale, getNormTerrHeight(image, x+1.0, z), z * lenScale);
@@ -402,9 +552,9 @@ void InitShapes(ShaderParamsC *params)
 			vector<glm::vec3> triVertList1;
 			triVertList1.push_back(vert1); triVertList1.push_back(vert2); triVertList1.push_back(vert3);
 			
-			glm::vec3 vert4 = glm::vec3((x + 1.0) * widScale, getNormTerrHeight(image, x + 1, z), z * lenScale);
-			glm::vec3 vert5 = glm::vec3((x + 1.0) * widScale, getNormTerrHeight(image, x + 1, z + 1), (z + 1.0) * lenScale);
-			glm::vec3 vert6 = glm::vec3(x * widScale, getNormTerrHeight(image, x, z + 1), (z + 1.0) * lenScale);
+			glm::vec3 vert4 = glm::vec3((x + 1.0) * widScale, getNormTerrHeight(image, x + 1, z + 1), (z + 1.0) * lenScale);
+			glm::vec3 vert5 = glm::vec3(x * widScale, getNormTerrHeight(image, x, z + 1), (z + 1.0) * lenScale);
+			glm::vec3 vert6 = glm::vec3((x + 1.0) * widScale, getNormTerrHeight(image, x + 1, z), z * lenScale);
 
 			vector<glm::vec3> triVertList2;
 			triVertList2.push_back(vert4); triVertList2.push_back(vert5); triVertList2.push_back(vert6);
@@ -441,6 +591,18 @@ void InitShapes(ShaderParamsC *params)
 	tri->SetKdToShader(params->kdParameter);
 	tri->SetKsToShader(params->ksParameter);
 	tri->SetShToShader(params->shParameter);
+
+
+
+	//Create the intial Spheres:
+	for (int i = 10; i < 30; i+=2) {
+		for (int j = 10; j < 30; j+=2) {
+			spherePosVec.push_back(glm::vec3(((double) j) / 5, 3, ((double)i) / 5));
+			sphereVelVec.push_back(glm::vec3(0, 0.0, 0));
+			sphereAccVec.push_back(glm::vec3(0, -0.007, 0.0));
+		}
+	}
+
 }
 
 int main(int argc, char **argv)
